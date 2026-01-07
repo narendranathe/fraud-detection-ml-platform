@@ -2,7 +2,7 @@
 
 End-to-end ML platform for detecting fraudulent transactions using Apache Kafka, Spark Streaming, MLflow, and Airflow.
 
-## 🎯 Project Overview
+## Project Overview
 
 This project demonstrates production-grade ML engineering skills including:
 - Real-time fraud detection with machine learning
@@ -12,7 +12,7 @@ This project demonstrates production-grade ML engineering skills including:
 - Feature engineering with time-based aggregations
 - Model monitoring and drift detection
 
-## 🏗️ Architecture
+##  Architecture
 ```
 Data Sources → Kafka → Spark Streaming → Real-Time Predictions → Monitoring
                 ↓                ↓
@@ -21,7 +21,7 @@ Data Sources → Kafka → Spark Streaming → Real-Time Predictions → Monitor
             Airflow → MLflow → Model Registry → Databricks
 ```
 
-## 🛠️ Tech Stack
+##  Tech Stack
 
 - **Languages**: Python, SQL
 - **ML/Data**: Scikit-learn, LightGBM, XGBoost, Pandas, NumPy
@@ -31,14 +31,14 @@ Data Sources → Kafka → Spark Streaming → Real-Time Predictions → Monitor
 - **Infrastructure**: Docker, Docker Compose
 - **Monitoring**: Prometheus, Grafana
 
-## 📊 Dataset
+##  Dataset
 
 - 100,000 synthetic transactions
 - 10,000 users, 5,000 merchants
 - ~2% fraud rate with realistic patterns
 - 30+ engineered features
 
-## 🚀 Features
+##  Features
 
 ### Data Pipeline
 - Synthetic transaction data generator with realistic fraud patterns
@@ -61,7 +61,7 @@ Data Sources → Kafka → Spark Streaming → Real-Time Predictions → Monitor
 - Performance monitoring
 - A/B testing framework
 
-## 📁 Project Structure
+##  Project Structure
 ```
 fraud-detection-ml-platform/
 ├── data/
@@ -84,7 +84,7 @@ fraud-detection-ml-platform/
 └── artifacts/                   # Models & plots
 ```
 
-## 🏃 Getting Started
+##  Getting Started
 
 ### Prerequisites
 - Python 3.10+
@@ -131,7 +131,7 @@ python src/models/train.py
 python src/models/evaluate.py
 ```
 
-## 📈 Model Performance
+##  Model Performance
 
 - **PR-AUC**: 0.XX
 - **ROC-AUC**: 0.XX
@@ -139,13 +139,13 @@ python src/models/evaluate.py
 - **Precision**: 0.XX
 - **Recall**: 0.XX
 
-## 🔍 Key Insights
+##  Key Insights
 
 - Top fraud indicators: velocity features, amount deviation, distance from home
 - Model catches XX% of fraud amount with <X% false positive rate
 - Real-time inference latency: <100ms
 
-## 🚧 Roadmap
+##  Roadmap
 
 - [x] Data generation pipeline
 - [x] Feature engineering
@@ -158,11 +158,11 @@ python src/models/evaluate.py
 - [ ] Model monitoring dashboard
 - [ ] Online learning implementation
 
-## 📝 License
+##  License
 
 This project is for portfolio and educational purposes.
 
-## 👤 Author
+##  Author
 
 **Narendranath**
 - Data Engineer with 4+ years of experience
@@ -170,7 +170,7 @@ This project is for portfolio and educational purposes.
 - [LinkedIn](your-linkedin-url)
 - [Email](your-email)
 
-## 🙏 Acknowledgments
+##  Acknowledgments
 
 - Synthetic data generation inspired by real-world fraud patterns
 - Architecture design based on industry best practices for ML systems
