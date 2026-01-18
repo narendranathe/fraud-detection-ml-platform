@@ -57,13 +57,16 @@ End-to-end ML engineering project demonstrating:
 
 ### **API Interactive Documentation**
 
-![FastAPI Swagger![alt text](image.png)
+[FastAPI Swagger![alt text](image.png)
+
 
 **Production-ready REST API with:**
 - Automatic OpenAPI documentation
 - Request/response validation
 - <1ms prediction latency
 - Prometheus metrics export
+
+- ![prometheus latency_seconds_sum 5m  dashboard](https://github.com/user-attachments/assets/77b12934-0cf4-4a02-8e08-c3cfee9577ad)
 
 ## 📊 Key Metrics
 
@@ -265,8 +268,8 @@ fraud-detection-ml-platform/
 - [x] FastAPI prediction service
 - [x] Docker infrastructure
 - [x] PostgreSQL storage
-- [ ] Model training pipeline
-- [ ] Grafana dashboards (completed below)
+- [x] Model training pipeline
+- [x] Grafana dashboards (completed below)
 - [ ] A/B testing framework
 - [ ] CI/CD with GitHub Actions
 - [ ] Kubernetes deployment
