@@ -8,7 +8,7 @@
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.128-green)
 ![License](https://img.shields.io/badge/License-MIT-yellow)
 
-## 🎯 Project Overview
+## Project Overview
 
 End-to-end ML engineering project demonstrating:
 - **Real-time streaming** with Apache Kafka (100+ TPS)
@@ -21,7 +21,7 @@ Built to showcase enterprise ML engineering skills for **Senior ML Engineer** an
 
 ---
 
-## 🏗️ Architecture
+##  Architecture
 ```
 ┌─────────────┐      ┌──────────┐      ┌──────────────┐      ┌─────────┐      ┌────────────┐
 │   Kafka     │─────▶│  Kafka   │─────▶│   Consumer   │─────▶│ FastAPI │─────▶│ PostgreSQL │
@@ -36,6 +36,7 @@ Built to showcase enterprise ML engineering skills for **Senior ML Engineer** an
                                                               └────────────┘
 ```
 
+<<<<<<< HEAD
 ---
 
 ## 📊 Key Metrics
@@ -51,24 +52,35 @@ Built to showcase enterprise ML engineering skills for **Senior ML Engineer** an
 ---
 
 ## 🛠️ Tech Stack
+=======
+##  Tech Stack
+>>>>>>> a2a51f649bc39b662e5ce74d6b37b8585e5daf50
 
 ### **Languages & Frameworks**
 - Python 3.11
 - SQL (PostgreSQL)
 
+<<<<<<< HEAD
 ### **Streaming & Processing**
 - Apache Kafka 3.5
 - Kafka Python Client
+=======
+##  Dataset
+>>>>>>> a2a51f649bc39b662e5ce74d6b37b8585e5daf50
 
 ### **Machine Learning**
 - Scikit-learn
 - LightGBM
 - MLflow (experiment tracking)
 
+<<<<<<< HEAD
 ### **API & Backend**
 - FastAPI (async API)
 - Pydantic (validation)
 - Uvicorn (ASGI server)
+=======
+##  Features
+>>>>>>> a2a51f649bc39b662e5ce74d6b37b8585e5daf50
 
 ### **Data Storage**
 - PostgreSQL 16
@@ -82,9 +94,39 @@ Built to showcase enterprise ML engineering skills for **Senior ML Engineer** an
 
 ---
 
+<<<<<<< HEAD
 ## 🚀 Quick Start
 
 ### **Prerequisites**
+=======
+##  Project Structure
+```
+fraud-detection-ml-platform/
+├── data/
+│   ├── raw/                      # Raw transaction data
+│   ├── processed/                # Engineered features
+│   └── generate_synthetic_data.py
+├── src/
+│   ├── data_ingestion/          # Kafka producers
+│   ├── feature_engineering/     # Feature pipelines
+│   ├── models/                  # Training & evaluation
+│   ├── streaming/               # Spark streaming apps
+│   ├── utils/                   # Helper functions
+│   └── api/                     # REST API
+├── airflow/
+│   └── dags/                    # Airflow DAGs
+├── docker/
+│   └── docker-compose.yml       # Infrastructure setup
+├── notebooks/                   # Jupyter notebooks
+├── tests/                       # Unit tests
+└── artifacts/                   # Models & plots
+```
+
+##  Getting Started
+
+### Prerequisites
+- Python 3.10+
+>>>>>>> a2a51f649bc39b662e5ce74d6b37b8585e5daf50
 - Docker Desktop
 - Python 3.11+
 - 8GB RAM minimum
@@ -133,11 +175,15 @@ python src/data_ingestion/kafka_producer.py
 python src/data_ingestion/kafka_consumer.py
 ```
 
+<<<<<<< HEAD
 ### **5. View Results**
 ```bash
 # Check predictions in PostgreSQL
 docker exec -it fraud-postgres psql -U fraud_user -d fraud_detection \
   -c "SELECT COUNT(*) FROM predictions;"
+=======
+##  Model Performance
+>>>>>>> a2a51f649bc39b662e5ce74d6b37b8585e5daf50
 
 # View recent fraud detections
 docker exec -it fraud-postgres psql -U fraud_user -d fraud_detection \
@@ -145,7 +191,11 @@ docker exec -it fraud-postgres psql -U fraud_user -d fraud_detection \
       WHERE prediction = 1 ORDER BY created_at DESC LIMIT 10;"
 ```
 
+<<<<<<< HEAD
 ---
+=======
+##  Key Insights
+>>>>>>> a2a51f649bc39b662e5ce74d6b37b8585e5daf50
 
 ## 📁 Project Structure
 ```
@@ -175,15 +225,23 @@ fraud-detection-ml-platform/
 └── README.md
 ```
 
+<<<<<<< HEAD
 ---
+=======
+##  Roadmap
+>>>>>>> a2a51f649bc39b662e5ce74d6b37b8585e5daf50
 
 ## 🎯 Features
 
+<<<<<<< HEAD
 ### **Real-Time Streaming**
 - Apache Kafka for event streaming
 - 100+ transactions per second throughput
 - Exactly-once processing semantics
 - Partitioned topics for scalability
+=======
+##  License
+>>>>>>> a2a51f649bc39b662e5ce74d6b37b8585e5daf50
 
 ### **ML Pipeline**
 - Synthetic fraud transaction generator
@@ -304,7 +362,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-## 👤 Author
+##  Author
 
 **Your Name**
 - GitHub: [@narendranathe](https://github.com/narendranathe)
@@ -313,8 +371,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-## 🙏 Acknowledgments
+##  Acknowledgments
 
+<<<<<<< HEAD
 - Built as part of job search portfolio for Senior ML Engineer roles
 - Inspired by production ML systems at major tech companies
 - Designed to demonstrate end-to-end ML engineering capabilities
@@ -329,3 +388,7 @@ Made with ❤️ for showcasing ML Engineering skills
 ```
 </markdown>
 
+=======
+- Synthetic data generation inspired by real-world fraud patterns
+- Architecture design based on industry best practices for ML systems
+>>>>>>> a2a51f649bc39b662e5ce74d6b37b8585e5daf50
