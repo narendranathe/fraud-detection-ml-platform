@@ -47,7 +47,7 @@ End-to-end ML engineering project demonstrating:
 
 ### **Grafana Monitoring**
 
-![Grafana Dashboard](![alt text](<grafana dashboard picture.jpg>)
+![alt text](<grafana dashboard picture.jpg>)
 
 **Real-time metrics showing:**
 - Total predictions processed
@@ -57,7 +57,7 @@ End-to-end ML engineering project demonstrating:
 
 ### **API Interactive Documentation**
 
-![FastAPI Swagger]![alt text](image.png)
+![FastAPI Swagger![alt text](image.png)
 
 **Production-ready REST API with:**
 - Automatic OpenAPI documentation
