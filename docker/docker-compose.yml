@@ -187,8 +187,7 @@ services:
       GF_INSTALL_PLUGINS: redis-datasource
     volumes:
       - grafana_data:/var/lib/grafana
-      - ../monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
-      - ../monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+      - ../monitoring/grafana/provisioning:/etc/grafana/provisioning
     depends_on:
       - prometheus
     networks:
