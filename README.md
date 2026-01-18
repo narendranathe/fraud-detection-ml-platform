@@ -43,6 +43,28 @@ End-to-end ML engineering project demonstrating:
 
 ---
 
+## 📊 Live Dashboard
+
+### **Grafana Monitoring**
+
+![Grafana Dashboard](![alt text](<grafana dashboard picture.jpg>)
+
+**Real-time metrics showing:**
+- Total predictions processed
+- Fraud detection rate
+- Sub-millisecond prediction latency
+- Throughput monitoring
+
+### **API Interactive Documentation**
+
+![FastAPI Swagger]![alt text](image.png)
+
+**Production-ready REST API with:**
+- Automatic OpenAPI documentation
+- Request/response validation
+- <1ms prediction latency
+- Prometheus metrics export
+
 ## 📊 Key Metrics
 
 | Metric | Value | Target |
