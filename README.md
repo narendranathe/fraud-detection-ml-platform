@@ -1,22 +1,27 @@
 # Real-Time Fraud Detection ML Platform
 
-Kafka consumers score a transaction stream with a LightGBM classifier behind FastAPI, at a measured P99 of 1.12ms per prediction. Each prediction, its probability, and its latency land in PostgreSQL and Prometheus, so detection rate and scoring speed are things you query, not things I claim. Trained on 100,000 synthetic transactions with a 2.03% fraud rate; runs tracked in MLflow.
+[![Python](https://img.shields.io/badge/Python-3.11-blue)](https://www.python.org/)
+[![Kafka](https://img.shields.io/badge/Apache%20Kafka-3.5-red)](https://kafka.apache.org/)
+[![Docker](https://img.shields.io/badge/Docker-Compose-blue)](https://www.docker.com/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.128-green)](https://fastapi.tiangolo.com/)
 
-The data is made up and the stack runs on one host. What this proves: the parts connect, and each claim has a number you can check. What it does not prove: fraud at bank scale.
+Kafka consumers score a transaction stream with a LightGBM model served by FastAPI. Measured P99 is 1.12ms per prediction. Every prediction, probability, and latency goes to PostgreSQL and Prometheus, so the numbers below come out of the database, not from memory. The model is trained on 100,000 synthetic transactions with a 2.03% fraud rate, tracked in MLflow.
+
+The data is made up and the stack runs on one host. Take the numbers as a check that the parts connect, not as proof of scale.
 
 ---
 
-## What this project taught me
+## What surprised me
 
-**The model was never the slow part.** The 1.12ms P99 includes HTTP parsing, Pydantic validation, and a one-row DataFrame built per request in `main.py`. LightGBM itself scores in microseconds. Tuning the model would have optimized the cheapest line on the bill.
+I assumed the model would be the slow part, so I measured it first. It wasn't. The 1.12ms P99 is almost all overhead: HTTP parsing, Pydantic validation, and building a one-row pandas DataFrame per request in `main.py`. LightGBM scores a single row in microseconds. I spent a day profiling the wrong thing.
 
-**The throughput ceiling is connection churn, not Kafka.** The consumer opens a fresh Postgres connection per prediction (`kafka_consumer.py`), so 100 TPS means 100 new connections a second. A `/predict/batch` endpoint exists and the consumer never calls it. Pooling and batching would buy more throughput than any broker tuning.
+The consumer opens a new Postgres connection for every prediction (`kafka_consumer.py`). At 100 TPS that is 100 connections a second, and Postgres runs out of patience long before Kafka does. There is a `/predict/batch` endpoint in `main.py` that I wrote and then never wired into the consumer. If I pick this project back up, that is the first fix.
 
-**Idempotence beat exactly-once.** Offsets auto-commit, and the sink writes with `ON CONFLICT (transaction_id) DO NOTHING`. A replayed message does no harm. That is the property exactly-once delivery pretends to give you, at a fraction of the complexity.
+An earlier draft of this README claimed exactly-once processing. It isn't true, and it doesn't need to be. Offsets auto-commit, and the insert uses `ON CONFLICT (transaction_id) DO NOTHING`, so a replayed message is a no-op. Idempotent writes get you the same guarantee without the ceremony.
 
-**The default threshold is wrong at a 2% base rate.** With 2,034 fraud rows in 100,000, predicting "no" every time scores 97.97% accuracy. The 0.5 cutoff in `main.py` comes from the library default, not from the cost of a missed fraud versus a false alarm. Picking the cutoff off the precision-recall curve is the actual work, and this repo does not do it yet.
+The fraud threshold is 0.5 because that is the library default. With 2,034 fraud rows out of 100,000, a model that never fires is already 97.97% accurate, so the cutoff has to come from the precision-recall curve and from what a missed fraud costs versus a false alarm. I haven't done that tuning. It is the weakest part of the project right now.
 
-**A silent fallback is an outage with extra steps.** If the model file is missing, the API switches to a rule (amount over 1000 gets 0.8) and keeps returning 200s. `/health` exposes `model_loaded`, but nothing alerts on it. In a real system I would make that fallback loud, page on it, and treat it as degraded service.
+If the model file is missing, the API quietly switches to a rule: amount over 1000 scores 0.8. `/health` reports `model_loaded: false`, but nothing alerts on it and the 200s keep coming. In production that means serving rule-based guesses for days while every dashboard says healthy.
 
 ---
 
@@ -36,6 +41,22 @@ Kafka producer ──▶ Kafka topic ──▶ Python consumer ──▶ FastAPI
 3. The consumer reads in 50-message batches and posts each transaction to `/predict`.
 4. FastAPI scores with LightGBM (P50 0.45ms, P95 0.89ms, P99 1.12ms) and the consumer persists ID, amount, probability, and latency to PostgreSQL.
 5. Prometheus scrapes `/metrics`; Grafana renders throughput, latency percentiles, and detection rate.
+
+---
+
+## Dashboards
+
+Grafana, during a 100 TPS run:
+
+![Grafana dashboard](<grafana dashboard picture.jpg>)
+
+Prediction latency sum over 5m, from Prometheus:
+
+![prometheus latency_seconds_sum 5m dashboard](https://github.com/user-attachments/assets/77b12934-0cf4-4a02-8e08-c3cfee9577ad)
+
+The API ships with OpenAPI docs at `/docs`:
+
+![FastAPI Swagger UI](image.png)
 
 ---
 
