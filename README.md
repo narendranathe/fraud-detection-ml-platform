@@ -5,23 +5,19 @@
 [![Docker](https://img.shields.io/badge/Docker-Compose-blue)](https://www.docker.com/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.128-green)](https://fastapi.tiangolo.com/)
 
-Kafka consumers score a transaction stream with a LightGBM model served by FastAPI. Measured P99 is 1.12ms per prediction. Every prediction, probability, and latency goes to PostgreSQL and Prometheus, so the numbers below come out of the database, not from memory. The model is trained on 100,000 synthetic transactions with a 2.03% fraud rate, tracked in MLflow.
-
-The data is made up and the stack runs on one host. Take the numbers as a check that the parts connect, not as proof of scale.
+I built this to learn Kafka past the quickstart level: a producer at 100 TPS, a consumer that scores each transaction with LightGBM behind FastAPI, predictions and latencies in Postgres, metrics in Prometheus. Scoring P99 came out at 1.12ms. The data is synthetic (100k rows, 2,034 fraud) and it all runs on one laptop, so the numbers mean the pipeline holds together. They don't mean it survives real payment traffic.
 
 ---
 
-## What surprised me
+## What I'd fix
 
-I assumed the model would be the slow part, so I measured it first. It wasn't. The 1.12ms P99 is almost all overhead: HTTP parsing, Pydantic validation, and building a one-row pandas DataFrame per request in `main.py`. LightGBM scores a single row in microseconds. I spent a day profiling the wrong thing.
+Things I know are wrong or lazy, in rough order of how much they'd hurt in production:
 
-The consumer opens a new Postgres connection for every prediction (`kafka_consumer.py`). At 100 TPS that is 100 connections a second, and Postgres runs out of patience long before Kafka does. There is a `/predict/batch` endpoint in `main.py` that I wrote and then never wired into the consumer. If I pick this project back up, that is the first fix.
-
-An earlier draft of this README claimed exactly-once processing. It isn't true, and it doesn't need to be. Offsets auto-commit, and the insert uses `ON CONFLICT (transaction_id) DO NOTHING`, so a replayed message is a no-op. Idempotent writes get you the same guarantee without the ceremony.
-
-The fraud threshold is 0.5 because that is the library default. With 2,034 fraud rows out of 100,000, a model that never fires is already 97.97% accurate, so the cutoff has to come from the precision-recall curve and from what a missed fraud costs versus a false alarm. I haven't done that tuning. It is the weakest part of the project right now.
-
-If the model file is missing, the API quietly switches to a rule: amount over 1000 scores 0.8. `/health` reports `model_loaded: false`, but nothing alerts on it and the 200s keep coming. In production that means serving rule-based guesses for days while every dashboard says healthy.
+- The consumer opens a new Postgres connection for every prediction (`kafka_consumer.py`). 100 TPS means 100 connections a second, so Postgres falls over before Kafka does. There's a `/predict/batch` endpoint in `main.py` that I wrote and never used. Pooling plus the batch endpoint is the obvious fix.
+- The fraud threshold is 0.5 because that's what the examples use. With 2,034 fraud rows in 100,000, a classifier that never fires is already ~98% accurate. The cutoff has to come off the PR curve, weighted by what a miss costs. Not done yet.
+- If the model pickle is missing, the API silently scores with a rule (`amount > 1000` gets 0.8) and keeps returning 200s. `/health` reports `model_loaded: false` but nothing alerts on it. It should fail the deploy or page someone, not improvise.
+- Most of the 1.12ms is FastAPI overhead: request parsing, Pydantic, a one-row DataFrame built per call. LightGBM itself takes microseconds. If latency ever actually mattered, the DataFrame goes first, not the model.
+- Offsets auto-commit and the insert is `ON CONFLICT (transaction_id) DO NOTHING`. Not exactly-once, but replays are no-ops, which is the property I actually wanted.
 
 ---
 
@@ -46,7 +42,7 @@ Kafka producer ──▶ Kafka topic ──▶ Python consumer ──▶ FastAPI
 
 ## Dashboards
 
-Grafana, during a 100 TPS run:
+Grafana during a 100 TPS run:
 
 ![Grafana dashboard](<grafana dashboard picture.jpg>)
 
@@ -54,7 +50,7 @@ Prediction latency sum over 5m, from Prometheus:
 
 ![prometheus latency_seconds_sum 5m dashboard](https://github.com/user-attachments/assets/77b12934-0cf4-4a02-8e08-c3cfee9577ad)
 
-The API ships with OpenAPI docs at `/docs`:
+OpenAPI docs are at `/docs`:
 
 ![FastAPI Swagger UI](image.png)
 
@@ -72,20 +68,6 @@ The API ships with OpenAPI docs at `/docs`:
 | Fraud detected in demo run | ~2% of 180+ scored transactions | Row count in the `predictions` table |
 
 Training runs and parameters are in MLflow (`http://localhost:5000` when the stack is up, or `python view_mlflow_results.py`).
-
----
-
-## Stack
-
-| Layer | Choice |
-|-------|--------|
-| Streaming | Apache Kafka 3.5, partitioned topics |
-| Model | LightGBM, scikit-learn pipeline, MLflow tracking |
-| Serving | FastAPI + Uvicorn, Pydantic validation |
-| Storage | PostgreSQL 16, Redis 7 feature cache |
-| Monitoring | Prometheus + Grafana, config in `monitoring/` |
-| Batch | Airflow DAGs in `airflow/` |
-| Infra | Docker Compose, 8GB RAM minimum |
 
 ---
 
