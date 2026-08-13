@@ -1,335 +1,138 @@
 # Real-Time Fraud Detection ML Platform
 
-> Production-grade machine learning platform for detecting fraudulent transactions in real-time using Apache Kafka, FastAPI, and PostgreSQL.
-
 [![Python](https://img.shields.io/badge/Python-3.11-blue)](https://www.python.org/)
 [![Kafka](https://img.shields.io/badge/Apache%20Kafka-3.5-red)](https://kafka.apache.org/)
 [![Docker](https://img.shields.io/badge/Docker-Compose-blue)](https://www.docker.com/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.128-green)](https://fastapi.tiangolo.com/)
 
-## 🎯 Project Overview
-
-End-to-end ML engineering project demonstrating:
-- **Real-time streaming** with Apache Kafka (100+ TPS)
-- **Sub-millisecond predictions** via FastAPI (<1ms latency)
-- **Scalable architecture** with Docker Compose
-- **Production monitoring** with Prometheus + Grafana
-- **Event-driven architecture** with Kafka consumers
-
-**Built to showcase enterprise ML engineering skills** for Senior ML Engineer and Data Engineering roles at big tech companies.
+I built this to learn Kafka past the quickstart level: a producer at 100 TPS, a consumer that scores each transaction with LightGBM behind FastAPI, predictions and latencies in Postgres, metrics in Prometheus. Scoring P99 came out at 1.12ms. The data is synthetic (100k rows, 2,034 fraud) and it all runs on one laptop, so the numbers mean the pipeline holds together. They don't mean it survives real payment traffic.
 
 ---
 
-## 🏗️ Architecture
+## What I'd fix
+
+Things I know are wrong or lazy, in rough order of how much they'd hurt in production:
+
+- The consumer opens a new Postgres connection for every prediction (`kafka_consumer.py`) and calls the API serially. The Grafana run below shows the result: producer at 100 TPS, scoring path keeping up at ~0.5 predictions a second. Postgres falls over before Kafka does. There's a `/predict/batch` endpoint in `main.py` that I wrote and never used. Pooling plus the batch endpoint is the obvious fix.
+- The fraud threshold is 0.5 because that's what the examples use. The Grafana run flagged 21 of 2,082 transactions (0.94%) against a training base rate of 2.03%, so the cutoff is under-flagging. It has to come off the PR curve, weighted by what a miss costs. Not done yet.
+- If the model pickle is missing, the API silently scores with a rule (`amount > 1000` gets 0.8) and keeps returning 200s. `/health` reports `model_loaded: false` but nothing alerts on it. The Swagger screenshot below is that fallback running. It should fail the deploy or page someone, not improvise.
+- Most of the 1.12ms is FastAPI overhead: request parsing, Pydantic, a one-row DataFrame built per call. LightGBM itself takes microseconds. If latency ever actually mattered, the DataFrame goes first, not the model.
+- Offsets auto-commit and the insert is `ON CONFLICT (transaction_id) DO NOTHING`. Not exactly-once, but replays are no-ops, which is the property I actually wanted.
+
+---
+
+## How it works
+
 ```
-┌─────────────┐      ┌──────────┐      ┌──────────────┐      ┌─────────┐      ┌────────────┐
-│   Kafka     │─────▶│  Kafka   │─────▶│   Consumer   │─────▶│ FastAPI │─────▶│ PostgreSQL │
-│  Producer   │      │  Topic   │      │  (Python)    │      │   API   │      │  Database  │
-│  (100 TPS)  │      │          │      │              │      │ (<1ms)  │      │            │
-└─────────────┘      └──────────┘      └──────────────┘      └─────────┘      └────────────┘
-                                                                    │
-                                                                    ▼
-                                                              ┌────────────┐
-                                                              │ Prometheus │
-                                                              │  Metrics   │
-                                                              └─────┬──────┘
-                                                                    │
-                                                                    ▼
-                                                              ┌────────────┐
-                                                              │  Grafana   │
-                                                              │ Dashboard  │
-                                                              └────────────┘
+Kafka producer ──▶ Kafka topic ──▶ Python consumer ──▶ FastAPI /predict ──▶ PostgreSQL
+(100 TPS)                        (50 msg batches)      (LightGBM, P99 1.12ms)      │
+                                                                                    ▼
+                                                                              Prometheus ──▶ Grafana
+                                                                              (latency percentiles,
+                                                                               fraud rate, throughput)
 ```
 
----
-
-## 📊 Live Dashboard
-
-### **Grafana Monitoring**
-
-![alt text](<grafana dashboard picture.jpg>)
-
-**Real-time metrics showing:**
-- Total predictions processed
-- Fraud detection rate
-- Sub-millisecond prediction latency
-- Throughput monitoring
-
-### **API Interactive Documentation**
-
-[FastAPI Swagger![alt text](image.png)
-
-
-**Production-ready REST API with:**
-- Automatic OpenAPI documentation
-- Request/response validation
-- <1ms prediction latency
-- Prometheus metrics export
-
-- ![prometheus latency_seconds_sum 5m  dashboard](https://github.com/user-attachments/assets/77b12934-0cf4-4a02-8e08-c3cfee9577ad)
-
-## 📊 Key Metrics
-
-| Metric | Value | Target |
-|--------|-------|--------|
-| **Throughput** | 100+ TPS | 100 TPS |
-| **Latency (P99)** | <1ms | <100ms |
-| **Fraud Detection Rate** | 2.03% | ~2% |
-| **Predictions Processed** | 180+ in demo | - |
-| **System Uptime** | 99.9% | 99%+ |
+1. `data/generate_synthetic_data.py` writes 100,000 labeled transactions (2,034 fraud, 2.03%) to `data/raw/`.
+2. The producer streams them at 100 TPS into a partitioned topic.
+3. The consumer reads in 50-message batches and posts each transaction to `/predict`.
+4. FastAPI scores with LightGBM (P50 0.45ms, P95 0.89ms, P99 1.12ms) and the consumer persists ID, amount, probability, and latency to PostgreSQL.
+5. Prometheus scrapes `/metrics`; Grafana renders throughput, latency percentiles, and detection rate.
 
 ---
 
-## 🛠️ Tech Stack
+## Measured results
 
-### **Streaming & Processing**
-- Apache Kafka 3.5 (event streaming)
-- Kafka Python Client (producer/consumer)
+| Metric | Value | How it was measured |
+|--------|-------|---------------------|
+| Scoring latency P50 | 0.45ms | Prometheus histogram on `/predict`, single sample, no batching |
+| Scoring latency P95 | 0.89ms | Same |
+| Scoring latency P99 | 1.12ms | Same |
+| Producer throughput | 100 TPS | Rate-limited loop in `kafka_producer.py` |
+| Scoring throughput | ~0.5 predictions/s | Grafana panel, full run below |
+| Training data | 100,000 rows, 2.03% fraud | Generator output |
+| Fraud flagged in longest run | 21 of 2,082 (0.94%) | Grafana counters, see proof of work |
 
-### **Machine Learning**
-- Scikit-learn (training pipeline)
-- LightGBM (fraud classifier)
-- MLflow (experiment tracking)
-
-### **API & Backend**
-- FastAPI (async REST API)
-- Pydantic (data validation)
-- Uvicorn (ASGI server)
-
-### **Data Storage**
-- PostgreSQL 16 (predictions)
-- Redis 7 (feature cache)
-
-### **Infrastructure**
-- Docker Compose (orchestration)
-- Prometheus (metrics collection)
-- Grafana (visualization)
-- Apache Airflow (workflow automation)
+Training runs and parameters are in MLflow (`http://localhost:5000` when the stack is up, or `python view_mlflow_results.py`).
 
 ---
 
-## 🚀 Quick Start
+## Run it
 
-### **Prerequisites**
-- Docker Desktop
-- Python 3.11+
-- 8GB RAM minimum
-
-### **1. Clone Repository**
 ```bash
-git clone https://github.com/narendranathe/fraud-detection-ml-platform.git
-cd fraud-detection-ml-platform
-```
+# 1. Infrastructure (FastAPI :8000, Prometheus :9090, Grafana :3000, MLflow :5000, Airflow :8080)
+cd docker && docker compose up -d
 
-### **2. Start Infrastructure**
-```bash
-cd docker
-docker compose up -d
-
-# Wait 30 seconds for services to start
-docker compose ps
-```
-
-**Services available at:**
-- FastAPI Docs: http://localhost:8000/docs
-- Prometheus: http://localhost:9090
-- Grafana: http://localhost:3000 (admin/admin)
-- MLflow: http://localhost:5000
-- Airflow: http://localhost:8080 (admin/admin)
-
-### **3. Setup Python Environment**
-```bash
+# 2. Python environment
 conda create -n fraud-detection python=3.11 -y
 conda activate fraud-detection
 pip install -r requirements.txt
-```
 
-### **4. Generate Data**
-```bash
+# 3. Training data (100k rows, ~2% fraud)
 python data/generate_synthetic_data.py
+
+# 4. Pipeline, three terminals
+python src/api/main.py                          # scoring API
+python src/data_ingestion/kafka_producer.py     # 100 TPS stream
+python src/data_ingestion/kafka_consumer.py     # scoring consumer
 ```
 
-Output:
-```
-✅ Generated 100,000 transactions
-   Fraud cases: 2,034 (2.03%)
-💾 Saved datasets to data/raw/
-```
+Verify:
 
-### **5. Start Real-Time Pipeline**
-
-**Terminal 1 - FastAPI:**
-```bash
-python src/api/main.py
-```
-
-**Terminal 2 - Kafka Producer:**
-```bash
-python src/data_ingestion/kafka_producer.py
-```
-
-**Terminal 3 - Kafka Consumer:**
-```bash
-python src/data_ingestion/kafka_consumer.py
-```
-
-### **6. View Results**
-
-**Check predictions in PostgreSQL:**
 ```bash
 docker exec -it fraud-postgres psql -U fraud_user -d fraud_detection \
-  -c "SELECT COUNT(*) as total_predictions FROM predictions;"
-```
+  -c "SELECT COUNT(*) FROM predictions;"
 
-**View fraud detections:**
-```bash
-docker exec -it fraud-postgres psql -U fraud_user -d fraud_detection \
-  -c "SELECT transaction_id, amount, fraud_probability FROM predictions 
-      WHERE prediction = 1 ORDER BY created_at DESC LIMIT 10;"
-```
-
----
-
-## 📁 Project Structure
-```
-fraud-detection-ml-platform/
-├── data/
-│   ├── raw/                          # Transaction data
-│   └── generate_synthetic_data.py    # Data generator
-├── src/
-│   ├── data_ingestion/
-│   │   ├── kafka_producer.py         # Stream to Kafka
-│   │   └── kafka_consumer.py         # Process messages
-│   ├── api/
-│   │   └── main.py                   # FastAPI service
-│   └── utils/                        # Helpers
-├── docker/
-│   ├── docker-compose.yml            # Infrastructure
-│   └── init-db.sql                   # DB schema
-├── monitoring/
-│   ├── prometheus.yml                # Metrics config
-│   └── grafana/                      # Dashboards
-├── tests/                            # Unit tests
-└── requirements.txt
-```
-
----
-
-## 🎯 Features
-
-### **Real-Time Processing**
-✅ Apache Kafka event streaming  
-✅ 100+ TPS sustained throughput  
-✅ Exactly-once processing  
-✅ Partitioned topics  
-
-### **ML Pipeline**
-✅ Synthetic fraud data generation  
-✅ Feature engineering  
-✅ LightGBM classifier  
-✅ MLflow tracking  
-
-### **Production API**
-✅ FastAPI async endpoints  
-✅ <1ms prediction latency  
-✅ Prometheus metrics  
-✅ Pydantic validation  
-
-### **Monitoring**
-✅ Prometheus metrics  
-✅ Grafana dashboards  
-✅ Fraud alerts  
-✅ Latency tracking  
-
----
-
-## 📈 Performance Results
-
-### **Throughput**
-- Producer: 100 TPS sustained
-- Consumer: 50 messages/batch
-- API: 2000+ requests/second capacity
-
-### **Latency**
-- P50: 0.45ms
-- P95: 0.89ms
-- P99: 1.12ms
-
-### **Fraud Detection (Demo Mode)**
-- Transactions processed: 180+
-- Fraud detected: ~2%
-- Average latency: <1ms
-
----
-
-## 🔮 Roadmap
-
-- [x] Real-time Kafka streaming
-- [x] FastAPI prediction service
-- [x] Docker infrastructure
-- [x] PostgreSQL storage
-- [x] Model training pipeline
-- [x] Grafana dashboards (completed below)
-- [ ] A/B testing framework
-- [ ] CI/CD with GitHub Actions
-- [ ] Kubernetes deployment
-
----
-
-## 🧪 Testing
-
-**API Documentation:**
-```bash
-open http://localhost:8000/docs
-```
-
-**Health Check:**
-```bash
-curl http://localhost:8000/health
-```
-
-**Make Prediction:**
-```bash
 curl -X POST http://localhost:8000/predict \
   -H "Content-Type: application/json" \
-  -d '{
-    "transaction_id": "TEST_001",
-    "customer_id": "CUST_123",
-    "merchant_id": "MERCH_456",
-    "merchant_category": "online_shopping",
-    "amount": 1500.00,
-    "device_type": "web",
-    "distance_from_home": 450.0,
-    "merchant_risk_score": 0.65,
-    "customer_age": 35,
-    "account_age_days": 730,
-    "hour": 14,
-    "day_of_week": 2,
-    "is_weekend": 0
-  }'
+  -d '{"transaction_id": "TEST_001", "customer_id": "CUST_123", "merchant_id": "MERCH_456",
+       "merchant_category": "online_shopping", "amount": 1500.00, "device_type": "web",
+       "distance_from_home": 450.0, "merchant_risk_score": 0.65, "customer_age": 35,
+       "account_age_days": 730, "hour": 14, "day_of_week": 2, "is_weekend": 0}'
+```
+
+API docs at `http://localhost:8000/docs`. Grafana login is `admin/admin`.
+
+---
+
+## Proof of work
+
+### Grafana, end of a full pipeline run
+
+![Grafana dashboard](<grafana dashboard picture.jpg>)
+
+Producer, consumer, API, and Postgres ran together for about 75 minutes. Total Predictions reads 2,082, Fraud Detected reads 21, and the Fraud Rate gauge sits at 0.937%. The panel that matters is Predictions Per Second: it holds ~0.5 ops/s from 16:00 to 17:15 while the producer was firing at 100 TPS. That gap is the consumer's serial loop (one HTTP call and one fresh Postgres connection per transaction) falling behind, which is why connection pooling and the unused batch endpoint are the first item in What I'd fix. The 0.94% flag rate against a 2.03% training base rate is the threshold problem, same list.
+
+### Prometheus, where the latency numbers come from
+
+![prometheus latency_seconds_sum 5m dashboard](https://github.com/user-attachments/assets/77b12934-0cf4-4a02-8e08-c3cfee9577ad)
+
+The query is `rate(prediction_latency_seconds_sum[5m])`, total scoring seconds accumulated per second over a 5-minute window. At roughly one prediction per second that rate equals mean latency per score: baseline ~0.5ms, with a spike to ~1.7ms around 22:52 when the load increased. The P50 / P95 / P99 figures in the results table come from the `prediction_latency_seconds` histogram this counter feeds.
+
+### Swagger, the API contract (and the fallback, visible)
+
+![FastAPI Swagger UI](image.png)
+
+`/predict` try-it-out with the sample transaction, response 200: probability 0.8, prediction 1, risk level high, latency 5ms. Look at the probability: exactly 0.8 on a $1,500 transaction is the demo rule (`amount > 1000`) firing, which means this run happened before the model artifact was mounted. The screenshot does double duty. It documents the request and response shape, and it shows the silent fallback from What I'd fix serving real 200s with nobody paged.
+
+---
+
+## Structure
+
+```
+├── data/generate_synthetic_data.py   # labeled transaction generator
+├── src/
+│   ├── data_ingestion/               # kafka_producer.py, kafka_consumer.py
+│   ├── api/main.py                   # FastAPI scoring service
+│   └── utils/
+├── docker/                           # docker-compose.yml, init-db.sql
+├── monitoring/                       # prometheus.yml, grafana/
+├── airflow/                          # batch DAGs
+├── artifacts/                        # trained model artifacts
+└── tests/                            # test_api.py
 ```
 
 ---
 
-## 👤 Author
+## License
 
-**Narendranath Edara**
-- GitHub: [@narendranathe](https://github.com/narendranathe)
-- LinkedIn: [Narendranath Edara](https://linkedin.com/in/narendranath-edara)
-- Email: edara.narendranath@gmail.com
-
----
-
-## 📄 License
-
-MIT License - Built as portfolio project for ML Engineering roles.
-
----
-
-## ⭐ Support
-
-If you find this project helpful, please give it a star!
-```
-Built with ❤️ to showcase production ML engineering skills
-```
-</markdown>
+MIT
