@@ -13,9 +13,9 @@ I built this to learn Kafka past the quickstart level: a producer at 100 TPS, a 
 
 Things I know are wrong or lazy, in rough order of how much they'd hurt in production:
 
-- The consumer opens a new Postgres connection for every prediction (`kafka_consumer.py`). 100 TPS means 100 connections a second, so Postgres falls over before Kafka does. There's a `/predict/batch` endpoint in `main.py` that I wrote and never used. Pooling plus the batch endpoint is the obvious fix.
-- The fraud threshold is 0.5 because that's what the examples use. With 2,034 fraud rows in 100,000, a classifier that never fires is already ~98% accurate. The cutoff has to come off the PR curve, weighted by what a miss costs. Not done yet.
-- If the model pickle is missing, the API silently scores with a rule (`amount > 1000` gets 0.8) and keeps returning 200s. `/health` reports `model_loaded: false` but nothing alerts on it. It should fail the deploy or page someone, not improvise.
+- The consumer opens a new Postgres connection for every prediction (`kafka_consumer.py`) and calls the API serially. The Grafana run below shows the result: producer at 100 TPS, scoring path keeping up at ~0.5 predictions a second. Postgres falls over before Kafka does. There's a `/predict/batch` endpoint in `main.py` that I wrote and never used. Pooling plus the batch endpoint is the obvious fix.
+- The fraud threshold is 0.5 because that's what the examples use. The Grafana run flagged 21 of 2,082 transactions (0.94%) against a training base rate of 2.03%, so the cutoff is under-flagging. It has to come off the PR curve, weighted by what a miss costs. Not done yet.
+- If the model pickle is missing, the API silently scores with a rule (`amount > 1000` gets 0.8) and keeps returning 200s. `/health` reports `model_loaded: false` but nothing alerts on it. The Swagger screenshot below is that fallback running. It should fail the deploy or page someone, not improvise.
 - Most of the 1.12ms is FastAPI overhead: request parsing, Pydantic, a one-row DataFrame built per call. LightGBM itself takes microseconds. If latency ever actually mattered, the DataFrame goes first, not the model.
 - Offsets auto-commit and the insert is `ON CONFLICT (transaction_id) DO NOTHING`. Not exactly-once, but replays are no-ops, which is the property I actually wanted.
 
@@ -40,22 +40,6 @@ Kafka producer ──▶ Kafka topic ──▶ Python consumer ──▶ FastAPI
 
 ---
 
-## Dashboards
-
-Grafana during a 100 TPS run:
-
-![Grafana dashboard](<grafana dashboard picture.jpg>)
-
-Prediction latency sum over 5m, from Prometheus:
-
-![prometheus latency_seconds_sum 5m dashboard](https://github.com/user-attachments/assets/77b12934-0cf4-4a02-8e08-c3cfee9577ad)
-
-OpenAPI docs are at `/docs`:
-
-![FastAPI Swagger UI](image.png)
-
----
-
 ## Measured results
 
 | Metric | Value | How it was measured |
@@ -64,8 +48,9 @@ OpenAPI docs are at `/docs`:
 | Scoring latency P95 | 0.89ms | Same |
 | Scoring latency P99 | 1.12ms | Same |
 | Producer throughput | 100 TPS | Rate-limited loop in `kafka_producer.py` |
+| Scoring throughput | ~0.5 predictions/s | Grafana panel, full run below |
 | Training data | 100,000 rows, 2.03% fraud | Generator output |
-| Fraud detected in demo run | ~2% of 180+ scored transactions | Row count in the `predictions` table |
+| Fraud flagged in longest run | 21 of 2,082 (0.94%) | Grafana counters, see proof of work |
 
 Training runs and parameters are in MLflow (`http://localhost:5000` when the stack is up, or `python view_mlflow_results.py`).
 
@@ -106,6 +91,28 @@ curl -X POST http://localhost:8000/predict \
 ```
 
 API docs at `http://localhost:8000/docs`. Grafana login is `admin/admin`.
+
+---
+
+## Proof of work
+
+### Grafana, end of a full pipeline run
+
+![Grafana dashboard](<grafana dashboard picture.jpg>)
+
+Producer, consumer, API, and Postgres ran together for about 75 minutes. Total Predictions reads 2,082, Fraud Detected reads 21, and the Fraud Rate gauge sits at 0.937%. The panel that matters is Predictions Per Second: it holds ~0.5 ops/s from 16:00 to 17:15 while the producer was firing at 100 TPS. That gap is the consumer's serial loop (one HTTP call and one fresh Postgres connection per transaction) falling behind, which is why connection pooling and the unused batch endpoint are the first item in What I'd fix. The 0.94% flag rate against a 2.03% training base rate is the threshold problem, same list.
+
+### Prometheus, where the latency numbers come from
+
+![prometheus latency_seconds_sum 5m dashboard](https://github.com/user-attachments/assets/77b12934-0cf4-4a02-8e08-c3cfee9577ad)
+
+The query is `rate(prediction_latency_seconds_sum[5m])`, total scoring seconds accumulated per second over a 5-minute window. At roughly one prediction per second that rate equals mean latency per score: baseline ~0.5ms, with a spike to ~1.7ms around 22:52 when the load increased. The P50 / P95 / P99 figures in the results table come from the `prediction_latency_seconds` histogram this counter feeds.
+
+### Swagger, the API contract (and the fallback, visible)
+
+![FastAPI Swagger UI](image.png)
+
+`/predict` try-it-out with the sample transaction, response 200: probability 0.8, prediction 1, risk level high, latency 5ms. Look at the probability: exactly 0.8 on a $1,500 transaction is the demo rule (`amount > 1000`) firing, which means this run happened before the model artifact was mounted. The screenshot does double duty. It documents the request and response shape, and it shows the silent fallback from What I'd fix serving real 200s with nobody paged.
 
 ---
 
