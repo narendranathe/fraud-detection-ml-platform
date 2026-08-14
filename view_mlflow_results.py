@@ -1,11 +1,14 @@
 """
 View MLflow experiment results without UI
 """
+import os
+
 import mlflow
 from mlflow.tracking import MlflowClient
 
-# Set tracking URI
-mlflow.set_tracking_uri("file:./mlruns")
+# Same store as training: the compose MLflow server by default, or whatever
+# MLFLOW_TRACKING_URI points at (e.g. file:./mlruns for a local file store).
+mlflow.set_tracking_uri(os.environ.get("MLFLOW_TRACKING_URI", "http://localhost:5000"))
 
 # Get client
 client = MlflowClient()
@@ -60,3 +63,5 @@ except Exception as e:
     print(f"❌ Error: {e}")
     print("\nMake sure you've run the training script first:")
     print("  python src\\models\\train.py")
+    print("and that the MLflow server is up (docker compose up -d) or")
+    print("MLFLOW_TRACKING_URI points at your local store.")
