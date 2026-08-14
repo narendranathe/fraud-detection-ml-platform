@@ -21,6 +21,11 @@ import os
 import sys
 warnings.filterwarnings('ignore')
 
+# MLflow runs go to the compose tracking server (Postgres-backed), which is
+# where the README sends the reader. Set MLFLOW_TRACKING_URI=file:./mlruns
+# to keep a local file store instead.
+TRACKING_URI = os.environ.get("MLFLOW_TRACKING_URI", "http://localhost:5000")
+
 # Allow importing src.utils.threshold when running from project root
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.utils.threshold import find_cost_weighted_threshold, save_threshold
@@ -97,8 +102,8 @@ def train_model(X_train, X_test, y_train, y_test, feature_cols, params):
     print("MODEL TRAINING")
     print("="*60)
     
-    # Set MLflow tracking (local directory)
-    mlflow.set_tracking_uri("file:./mlruns")
+    # Log to the tracking server the README points at (issue #3)
+    mlflow.set_tracking_uri(TRACKING_URI)
     mlflow.set_experiment("fraud-detection")
     
     with mlflow.start_run(run_name="lgbm_baseline"):
@@ -229,7 +234,7 @@ def train_model(X_train, X_test, y_train, y_test, feature_cols, params):
         print(f"   ✅ Saved: {threshold_path}")
         
         print(f"\n✅ Model logged to MLflow")
-        print(f"📂 MLflow tracking: ./mlruns")
+        print(f"📂 MLflow tracking: {TRACKING_URI}")
         
         return model, pr_auc, roc_auc, f1, optimal_threshold
 
@@ -270,10 +275,9 @@ def main():
     print(f"   F1-Score:   {f1:.4f}")
     print(f"   Threshold:  {threshold:.4f}")
     print(f"\n📁 Artifacts saved to: ./artifacts/models/")
-    print(f"📂 MLflow runs saved to: ./mlruns/")
-    print(f"\n💡 To view MLflow UI, run:")
-    print(f"   mlflow ui")
-    print(f"   Then open: http://localhost:5000")
+    print(f"📂 MLflow tracking URI: {TRACKING_URI}")
+    print(f"\n💡 View runs in the MLflow UI:")
+    print(f"   {TRACKING_URI if TRACKING_URI.startswith('http') else 'run: mlflow ui --backend-store-uri ' + TRACKING_URI.removeprefix('file:')}")
     print("="*60 + "\n")
 
 
