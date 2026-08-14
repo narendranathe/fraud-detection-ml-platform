@@ -56,9 +56,12 @@ sample_transaction_2 = {
 # Test health endpoint
 print("Testing /health endpoint...")
 response = client.get("/health")
-print(json.dumps(response.json(), indent=2))
+health = response.json()
+print(json.dumps(health, indent=2))
 assert response.status_code == 200
-assert "model_loaded" in response.json()
+assert "model_loaded" in health
+assert "fraud_threshold" in health
+assert health["fraud_threshold"] == 0.5
 
 # Test prediction endpoint
 print("\nTesting /predict endpoint...")
@@ -69,6 +72,13 @@ pred = response.json()
 assert pred["transaction_id"] == sample_transaction["transaction_id"]
 assert "model_version" in pred
 assert "latency_ms" in pred
+assert pred["prediction"] == 1, "High-amount demo transaction should be flagged"
+
+# Low-amount transaction should not be flagged when threshold is 0.5
+low_amount_transaction = {**sample_transaction, "transaction_id": "TXN_LOW_001", "amount": 45.00}
+response = client.post("/predict", json=low_amount_transaction)
+assert response.status_code == 200
+assert response.json()["prediction"] == 0, "Low-amount demo transaction should not be flagged"
 
 # Test batch prediction endpoint
 print("\nTesting /predict/batch endpoint...")
@@ -82,5 +92,9 @@ assert "model_version" in batch_result, "Batch response should include model_ver
 for pred in batch_result["predictions"]:
     assert "model_version" in pred, "Each prediction should include model_version"
     assert "latency_ms" in pred, "Each prediction should include latency_ms"
+    if pred["transaction_id"] == sample_transaction["transaction_id"]:
+        assert pred["prediction"] == 1, "High-amount demo transaction should be flagged in batch"
+    if pred["transaction_id"] == sample_transaction_2["transaction_id"]:
+        assert pred["prediction"] == 0, "Low-amount demo transaction should not be flagged in batch"
 
 print("\n✅ API is working!")

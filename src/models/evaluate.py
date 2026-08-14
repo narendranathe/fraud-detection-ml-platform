@@ -15,7 +15,7 @@ def load_model_and_data():
     
     # Load model
     print("\n📦 Loading trained model...")
-    model = joblib.load('artifacts/fraud_model.pkl')
+    model = joblib.load('artifacts/models/fraud_detector_model.pkl')
     print("   ✅ Model loaded")
     
     # Load data
@@ -165,7 +165,7 @@ def main():
         print("\n💡 Make sure you've run the training script first:")
         print("   python src\\models\\train.py")
         print("\nThis will create:")
-        print("   - artifacts/fraud_model.pkl")
+        print("   - artifacts/models/fraud_detector_model.pkl")
         print("   - data/processed/transactions_with_features.csv")
     except Exception as e:
         print(f"\n❌ ERROR: {e}")

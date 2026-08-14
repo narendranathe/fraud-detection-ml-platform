@@ -13,8 +13,8 @@ I built this to learn Kafka past the quickstart level: a producer at 100 TPS, a 
 
 Things I know are wrong or lazy, in rough order of how much they'd hurt in production:
 
-- The consumer opens a new Postgres connection for every prediction (`kafka_consumer.py`) and calls the API serially. The Grafana run below shows the result: producer at 100 TPS, scoring path keeping up at ~0.5 predictions a second. Postgres falls over before Kafka does. There's a `/predict/batch` endpoint in `main.py` that I wrote and never used. Pooling plus the batch endpoint is the obvious fix.
-- The fraud threshold is 0.5 because that's what the examples use. The Grafana run flagged 21 of 2,082 transactions (0.94%) against a training base rate of 2.03%, so the cutoff is under-flagging. It has to come off the PR curve, weighted by what a miss costs. Not done yet.
+- ✅ **Consumer throughput** — fixed: the consumer now pools Postgres connections, reuses an HTTP session, calls `/predict/batch`, and bulk inserts with `execute_values`.
+- ✅ **Fraud threshold** — fixed: `src/models/train.py` derives a cost-weighted threshold from the validation PR curve (default 10:1 missed-fraud vs false-alarm cost) and persists it to `artifacts/models/threshold.json`. The API loads and uses it instead of the hard-coded 0.5.
 - If the model pickle is missing, the API silently scores with a rule (`amount > 1000` gets 0.8) and keeps returning 200s. `/health` reports `model_loaded: false` but nothing alerts on it. The Swagger screenshot below is that fallback running. It should fail the deploy or page someone, not improvise.
 - Most of the 1.12ms is FastAPI overhead: request parsing, Pydantic, a one-row DataFrame built per call. LightGBM itself takes microseconds. If latency ever actually mattered, the DataFrame goes first, not the model.
 - Offsets auto-commit and the insert is `ON CONFLICT (transaction_id) DO NOTHING`. Not exactly-once, but replays are no-ops, which is the property I actually wanted.
@@ -123,12 +123,14 @@ The query is `rate(prediction_latency_seconds_sum[5m])`, total scoring seconds a
 ├── src/
 │   ├── data_ingestion/               # kafka_producer.py, kafka_consumer.py
 │   ├── api/main.py                   # FastAPI scoring service
-│   └── utils/
+│   ├── models/                       # train.py, evaluate.py
+│   ├── utils/                        # threshold.py (cost-weighted threshold selection)
+│   └── ...
 ├── docker/                           # docker-compose.yml, init-db.sql
 ├── monitoring/                       # prometheus.yml, grafana/
 ├── airflow/                          # batch DAGs
-├── artifacts/                        # trained model artifacts
-└── tests/                            # test_api.py
+├── artifacts/models/                 # trained model + threshold.json
+└── tests/                            # test_api.py, test_consumer.py, test_threshold.py
 ```
 
 ---

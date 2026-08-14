@@ -3,6 +3,7 @@ FastAPI Fraud Detection Service
 Real-time fraud prediction API with <100ms latency
 """
 
+import json
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from typing import List
@@ -15,6 +16,8 @@ from pathlib import Path
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
 from fastapi.responses import Response
 
+from src.utils.threshold import load_threshold
+
 logger.add("logs/api.log", rotation="10 MB")
 
 # Prometheus metrics
@@ -25,23 +28,30 @@ PREDICTION_LATENCY = Histogram('prediction_latency_seconds', 'Prediction latency
 # Global model cache
 MODEL = None
 MODEL_VERSION = "v1.0.0"
+FRAUD_THRESHOLD = 0.5
 
 
 def load_model():
-    """Load latest trained model"""
-    global MODEL, MODEL_VERSION
+    """Load latest trained model and threshold"""
+    global MODEL, MODEL_VERSION, FRAUD_THRESHOLD
     
     try:
         model_path = Path("artifacts/models/fraud_detector_model.pkl")
         if model_path.exists():
             MODEL = joblib.load(model_path)
             logger.info(f"✅ Loaded model from {model_path}")
+            
+            # Load cost-weighted threshold persisted alongside the model
+            FRAUD_THRESHOLD = load_threshold("artifacts/models/threshold.json", default=0.5)
+            logger.info(f"🎯 Loaded fraud threshold: {FRAUD_THRESHOLD}")
         else:
             logger.warning(f"⚠️ Model not found at {model_path} - Using demo mode")
             MODEL = None
+            FRAUD_THRESHOLD = 0.5
     except Exception as e:
         logger.error(f"❌ Failed to load model: {e}")
         MODEL = None
+        FRAUD_THRESHOLD = 0.5
 
 
 @asynccontextmanager
@@ -107,6 +117,7 @@ async def health():
         "status": "healthy",
         "model_loaded": MODEL is not None,
         "model_version": MODEL_VERSION,
+        "fraud_threshold": FRAUD_THRESHOLD,
         "timestamp": time.time()
     }
 
@@ -134,8 +145,8 @@ async def predict(transaction: Transaction):
             # Make prediction
             fraud_prob = MODEL.predict_proba(data)[0][1]
         
-        # Binary prediction (threshold = 0.5)
-        prediction = 1 if fraud_prob > 0.5 else 0
+        # Binary prediction using cost-weighted threshold
+        prediction = 1 if fraud_prob > FRAUD_THRESHOLD else 0
         
         # Update metrics
         PREDICTIONS_COUNTER.inc()
@@ -178,7 +189,7 @@ async def predict_batch(transactions: List[Transaction]):
         # Demo mode
         for txn in transactions:
             fraud_prob = 0.8 if txn.amount > 1000 else 0.2
-            prediction = 1 if fraud_prob > 0.5 else 0
+            prediction = 1 if fraud_prob > FRAUD_THRESHOLD else 0
             
             PREDICTIONS_COUNTER.inc()
             if prediction == 1:
@@ -197,7 +208,7 @@ async def predict_batch(transactions: List[Transaction]):
         fraud_probs = MODEL.predict_proba(data)[:, 1]
         
         for txn, prob in zip(transactions, fraud_probs):
-            prediction = 1 if prob > 0.5 else 0
+            prediction = 1 if prob > FRAUD_THRESHOLD else 0
             
             PREDICTIONS_COUNTER.inc()
             if prediction == 1:

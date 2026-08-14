@@ -1,6 +1,7 @@
 """
 Model training with MLflow tracking
 """
+import json
 import pandas as pd
 import numpy as np
 import mlflow
@@ -17,7 +18,12 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import warnings
 import os
+import sys
 warnings.filterwarnings('ignore')
+
+# Allow importing src.utils.threshold when running from project root
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from src.utils.threshold import find_cost_weighted_threshold, save_threshold
 
 # Define feature columns
 FEATURE_COLS = [
@@ -126,12 +132,22 @@ def train_model(X_train, X_test, y_train, y_test, feature_cols, params):
         precision_score_val = precision_score(y_test, y_pred)
         recall_score_val = recall_score(y_test, y_pred)
         
+        # Cost-weighted threshold optimization (default: missed fraud costs 10x a false alarm)
+        print("\n🎯 Optimizing fraud threshold...")
+        optimal_threshold, threshold_metadata = find_cost_weighted_threshold(
+            y_test, y_pred_proba, fn_cost=10.0, fp_cost=1.0
+        )
+        print(f"   Optimal threshold: {optimal_threshold:.4f}")
+        print(f"   FN cost: 10, FP cost: 1")
+        print(f"   Estimated cost at threshold: {threshold_metadata['best_cost']:.2f}")
+        
         # Log metrics
         mlflow.log_metric("pr_auc", pr_auc)
         mlflow.log_metric("roc_auc", roc_auc)
         mlflow.log_metric("f1_score", f1)
         mlflow.log_metric("precision", precision_score_val)
         mlflow.log_metric("recall", recall_score_val)
+        mlflow.log_metric("fraud_threshold", optimal_threshold)
         
         print(f"\n📈 MODEL PERFORMANCE:")
         print(f"   PR-AUC:    {pr_auc:.4f}")
@@ -145,7 +161,7 @@ def train_model(X_train, X_test, y_train, y_test, feature_cols, params):
         print(classification_report(y_test, y_pred, target_names=['Normal', 'Fraud']))
         
         # Create artifacts directory
-        os.makedirs('artifacts', exist_ok=True)
+        os.makedirs('artifacts/models', exist_ok=True)
         
         # Confusion matrix
         cm = confusion_matrix(y_test, y_pred)
@@ -155,7 +171,7 @@ def train_model(X_train, X_test, y_train, y_test, feature_cols, params):
         plt.ylabel('True Label')
         plt.xlabel('Predicted Label')
         plt.tight_layout()
-        confusion_matrix_path = 'artifacts/confusion_matrix.png'
+        confusion_matrix_path = 'artifacts/models/confusion_matrix.png'
         plt.savefig(confusion_matrix_path, dpi=100)
         mlflow.log_artifact(confusion_matrix_path)
         plt.close()
@@ -173,7 +189,7 @@ def train_model(X_train, X_test, y_train, y_test, feature_cols, params):
         plt.title('Top 15 Feature Importances')
         plt.xlabel('Importance')
         plt.tight_layout()
-        feature_importance_path = 'artifacts/feature_importance.png'
+        feature_importance_path = 'artifacts/models/feature_importance.png'
         plt.savefig(feature_importance_path, dpi=100)
         mlflow.log_artifact(feature_importance_path)
         plt.close()
@@ -191,7 +207,7 @@ def train_model(X_train, X_test, y_train, y_test, feature_cols, params):
         plt.title(f'Precision-Recall Curve (AUC = {pr_auc:.4f})', fontsize=14)
         plt.grid(True, alpha=0.3)
         plt.tight_layout()
-        pr_curve_path = 'artifacts/pr_curve.png'
+        pr_curve_path = 'artifacts/models/pr_curve.png'
         plt.savefig(pr_curve_path, dpi=100)
         mlflow.log_artifact(pr_curve_path)
         plt.close()
@@ -202,15 +218,20 @@ def train_model(X_train, X_test, y_train, y_test, feature_cols, params):
         
         # Save model locally
         import joblib
-        model_path = 'artifacts/fraud_model.pkl'
+        model_path = 'artifacts/models/fraud_detector_model.pkl'
         joblib.dump(model, model_path)
         mlflow.log_artifact(model_path)
         print(f"   ✅ Saved: {model_path}")
         
+        # Save cost-weighted threshold
+        threshold_path = save_threshold(optimal_threshold, threshold_metadata, output_path='artifacts/models/threshold.json')
+        mlflow.log_artifact(str(threshold_path))
+        print(f"   ✅ Saved: {threshold_path}")
+        
         print(f"\n✅ Model logged to MLflow")
         print(f"📂 MLflow tracking: ./mlruns")
         
-        return model, pr_auc, roc_auc, f1
+        return model, pr_auc, roc_auc, f1, optimal_threshold
 
 
 def main():
@@ -238,16 +259,17 @@ def main():
         print(f"   {k}: {v}")
     
     # Train model
-    model, pr_auc, roc_auc, f1 = train_model(X_train, X_test, y_train, y_test, feature_cols, params)
+    model, pr_auc, roc_auc, f1, threshold = train_model(X_train, X_test, y_train, y_test, feature_cols, params)
     
     print("\n" + "="*60)
     print("✅ TRAINING COMPLETE!")
     print("="*60)
     print(f"\n📊 FINAL METRICS:")
-    print(f"   PR-AUC:   {pr_auc:.4f}")
-    print(f"   ROC-AUC:  {roc_auc:.4f}")
-    print(f"   F1-Score: {f1:.4f}")
-    print(f"\n📁 Artifacts saved to: ./artifacts/")
+    print(f"   PR-AUC:     {pr_auc:.4f}")
+    print(f"   ROC-AUC:    {roc_auc:.4f}")
+    print(f"   F1-Score:   {f1:.4f}")
+    print(f"   Threshold:  {threshold:.4f}")
+    print(f"\n📁 Artifacts saved to: ./artifacts/models/")
     print(f"📂 MLflow runs saved to: ./mlruns/")
     print(f"\n💡 To view MLflow UI, run:")
     print(f"   mlflow ui")
