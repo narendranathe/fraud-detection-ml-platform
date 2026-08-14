@@ -129,7 +129,7 @@ async def predict(transaction: Transaction):
             fraud_prob = 0.8 if transaction.amount > 1000 else 0.2
         else:
             # Convert to DataFrame
-            data = pd.DataFrame([transaction.dict()])
+            data = pd.DataFrame([transaction.model_dump()])
             
             # Make prediction
             fraud_prob = MODEL.predict_proba(data)[0][1]
@@ -188,11 +188,12 @@ async def predict_batch(transactions: List[Transaction]):
                 "transaction_id": txn.transaction_id,
                 "fraud_probability": round(fraud_prob, 4),
                 "prediction": prediction,
-                "risk_level": "high" if fraud_prob > 0.7 else "medium" if fraud_prob > 0.3 else "low"
+                "risk_level": "high" if fraud_prob > 0.7 else "medium" if fraud_prob > 0.3 else "low",
+                "model_version": MODEL_VERSION
             })
     else:
         # Real model
-        data = pd.DataFrame([t.dict() for t in transactions])
+        data = pd.DataFrame([t.model_dump() for t in transactions])
         fraud_probs = MODEL.predict_proba(data)[:, 1]
         
         for txn, prob in zip(transactions, fraud_probs):
@@ -206,16 +207,22 @@ async def predict_batch(transactions: List[Transaction]):
                 "transaction_id": txn.transaction_id,
                 "fraud_probability": round(float(prob), 4),
                 "prediction": prediction,
-                "risk_level": "high" if prob > 0.7 else "medium" if prob > 0.3 else "low"
+                "risk_level": "high" if prob > 0.7 else "medium" if prob > 0.3 else "low",
+                "model_version": MODEL_VERSION
             })
     
     latency_ms = (time.time() - start_time) * 1000
+    avg_latency_per_txn_ms = latency_ms / len(transactions) if transactions else 0
+    
+    for result in results:
+        result["latency_ms"] = round(avg_latency_per_txn_ms, 2)
     
     return {
         "predictions": results,
         "batch_size": len(transactions),
         "latency_ms": round(latency_ms, 2),
-        "avg_latency_per_txn_ms": round(latency_ms / len(transactions), 2)
+        "avg_latency_per_txn_ms": round(avg_latency_per_txn_ms, 2),
+        "model_version": MODEL_VERSION
     }
 
 
