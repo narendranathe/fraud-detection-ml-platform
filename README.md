@@ -52,7 +52,7 @@ Kafka producer ──▶ Kafka topic ──▶ Python consumer ──▶ FastAPI
 | Training data | 100,000 rows, 2.03% fraud | Generator output |
 | Fraud flagged in longest run | 21 of 2,082 (0.94%) | Grafana counters, see proof of work |
 
-Training runs and parameters are in MLflow (`http://localhost:5000` when the stack is up, or `python view_mlflow_results.py`).
+Training runs and parameters are in MLflow at `http://localhost:5000`, the compose server that training logs to by default. Set `MLFLOW_TRACKING_URI=file:./mlruns` to keep a local file store instead, and run `python view_mlflow_results.py` for a terminal dump of the same store.
 
 ---
 
